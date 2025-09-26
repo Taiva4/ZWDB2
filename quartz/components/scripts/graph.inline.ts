@@ -164,7 +164,6 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const width = graph.offsetWidth
   const height = Math.max(graph.offsetHeight, 250)
 
-  // we virtualize the simulation and use pixi to actually render it
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
     .force("charge", forceManyBody().strength(-100 * repelForce))
     .force("center", forceCenter().strength(centerForce))
@@ -174,7 +173,6 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const radius = (Math.min(width, height) / 2) * 0.8
   if (enableRadial) simulation.force("radial", forceRadial(radius).strength(0.2))
 
-  // precompute style prop strings as pixi doesn't support css variables
   const cssVars = [
     "--secondary",
     "--tertiary",
@@ -194,9 +192,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   )
 
   // 🔴 Every node is red
-  const color = (d: NodeData) => {
-    return "#ff0000"
-  }
+  const color = (d: NodeData) => "#ff0000"
 
   function nodeRadius(d: NodeData) {
     const numLinks = graphData.links.filter(
@@ -248,11 +244,9 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
 
     for (const l of linkRenderData) {
       let alpha = 1
-
       if (hoveredNodeId) {
         alpha = l.active ? 1 : 0.2
       }
-
       l.color = l.active ? computedStyleMap["--gray"] : computedStyleMap["--lightgray"]
       tweenGroup.add(new Tweened<LinkRenderData>(l).to({ alpha }, 200))
     }
@@ -278,20 +272,14 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
       if (hoveredNodeId === nodeId) {
         tweenGroup.add(
           new Tweened<Text>(n.label).to(
-            {
-              alpha: 1,
-              scale: { x: activeScale, y: activeScale },
-            },
+            { alpha: 1, scale: { x: activeScale, y: activeScale } },
             100,
           ),
         )
       } else {
         tweenGroup.add(
           new Tweened<Text>(n.label).to(
-            {
-              alpha: n.label.alpha,
-              scale: { x: defaultScale, y: defaultScale },
-            },
+            { alpha: n.label.alpha, scale: { x: defaultScale, y: defaultScale } },
             100,
           ),
         )
@@ -309,7 +297,6 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
 
   function renderNodes() {
     tweens.get("hover")?.stop()
-
     const tweenGroup = new TweenGroup()
     for (const n of nodeRenderData) {
       let alpha = 1
@@ -378,7 +365,6 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     label.scale.set(1 / scale)
 
     let oldLabelOpacity = 0
-    const isTagNode = nodeId.startsWith("tags/")
     const gfx = new Graphics({
       interactive: true,
       label: nodeId,
@@ -387,25 +373,18 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
       cursor: "pointer",
     })
       .circle(0, 0, nodeRadius(n))
-      .fill({ color: color(n) }) // always use our red
+      // 🔴 force every node to be red
+      .fill({ color: "#ff0000" })
       .on("pointerover", (e) => {
         updateHoverInfo(e.target.label)
         oldLabelOpacity = label.alpha
-        if (!dragging) {
-          renderPixiFromD3()
-        }
+        if (!dragging) renderPixiFromD3()
       })
       .on("pointerleave", () => {
         updateHoverInfo(null)
         label.alpha = oldLabelOpacity
-        if (!dragging) {
-          renderPixiFromD3()
-        }
+        if (!dragging) renderPixiFromD3()
       })
-
-    if (isTagNode) {
-      gfx.stroke({ width: 2, color: computedStyleMap["--tertiary"] })
-    }
 
     nodesContainer.addChild(gfx)
     labelsContainer.addChild(label)
@@ -414,7 +393,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
       simulationData: n,
       gfx,
       label,
-      color: color(n),
+      color: "#ff0000", // keep internal state red
       alpha: 1,
       active: false,
     }
@@ -563,4 +542,13 @@ document.addEventListener("nav", async (e: CustomEventMap["nav"]) => {
   const slug = e.detail.url
   addToVisited(simplifySlug(slug))
 
-  async function render
+  async function renderLocalGraph() {
+    cleanupLocalGraphs()
+    const localGraphContainers = document.getElementsByClassName("graph-container")
+    for (const container of localGraphContainers) {
+      localGraphCleanups.push(await renderGraph(container as HTMLElement, slug))
+    }
+  }
+
+  await renderLocalGraph()
+ 
