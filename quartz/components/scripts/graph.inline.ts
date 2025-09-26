@@ -193,8 +193,17 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     {} as Record<(typeof cssVars)[number], string>,
   )
 
+  // 🔴 Customization: color everything inside folder "Test" in red
+  const TEST_COLOR = "#ff0000"
+  const inTestFolder = (id: string) => id === "Test" || id.startsWith("Test/")
+
   // calculate color
   const color = (d: NodeData) => {
+    // Folder-based color takes priority
+    if (inTestFolder(d.id)) {
+      return TEST_COLOR
+    }
+
     const isCurrent = d.id === slug
     if (isCurrent) {
       return computedStyleMap["--secondary"]
