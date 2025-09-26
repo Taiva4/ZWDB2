@@ -126,6 +126,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const wl: (SimpleSlug | "__SENTINEL")[] = [slug, "__SENTINEL"]
   if (depth >= 0) {
     while (depth >= 0 && wl.length > 0) {
+      // compute neighbours
       const cur = wl.shift()!
       if (cur === "__SENTINEL") {
         depth--
@@ -163,6 +164,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const width = graph.offsetWidth
   const height = Math.max(graph.offsetHeight, 250)
 
+  // we virtualize the simulation and use pixi to actually render it
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
     .force("charge", forceManyBody().strength(-100 * repelForce))
     .force("center", forceCenter().strength(centerForce))
@@ -172,6 +174,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const radius = (Math.min(width, height) / 2) * 0.8
   if (enableRadial) simulation.force("radial", forceRadial(radius).strength(0.2))
 
+  // precompute style prop strings as pixi doesn't support css variables
   const cssVars = [
     "--secondary",
     "--tertiary",
@@ -190,36 +193,27 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     {} as Record<(typeof cssVars)[number], string>,
   )
 
-// Map top-level folders (relative to content/) to colors.
-// Add/adjust as you like (hex, rgb(), or CSS variables all work).
-const folderColorMap: Record<string, string> = {
-  "projects": "#4f46e5",  // indigo
-  "journal":  "#f59e0b",  // amber
-  "research": "#10b981",  // emerald
-  "Test":    "#ef4444",  // red
-}
+  // === RED for "Content/Test" folder and its contents ===
+const RED = "#ff0000"
+const isTestId = (id: string) => id === "Content/Test" || id.startsWith("Content/Test/")
+const isTestNode = (d: NodeData) => isTestId(d.id)
+const isTestLink = (l: LinkData) => isTestId(l.source.id) || isTestId(l.target.id)
+// =============================================
 
-// Helper: get top-level folder from an id like "projects/foo/bar"
-function topFolderFromId(id: string): string {
-  const parts = id.split("/")
-  // ids for tags typically start with "tags/", we leave those to your existing rule
-  return parts.length > 1 ? parts[0] : ""
-}
+  // calculate color
+  const color = (d: NodeData) => {
+    // Force red for "Test" folder and anything inside it
+    if (isTestNode(d)) return RED
 
-const color = (d: NodeData) => {
-  const isCurrent = d.id === slug
-  if (isCurrent) {
-    return computedStyleMap["--secondary"]
-  } else if (visited.has(d.id) || d.id.startsWith("tags/")) {
-    return computedStyleMap["--tertiary"]
-  } else {
-    const folder = topFolderFromId(d.id)
-    if (folder && folderColorMap[folder]) {
-      return folderColorMap[folder]
+    const isCurrent = d.id === slug
+    if (isCurrent) {
+      return computedStyleMap["--secondary"]
+    } else if (visited.has(d.id) || d.id.startsWith("tags/")) {
+      return computedStyleMap["--tertiary"]
+    } else {
+      return computedStyleMap["--gray"]
     }
-    return computedStyleMap["--gray"] // fallback
   }
-}
 
   function nodeRadius(d: NodeData) {
     const numLinks = graphData.links.filter(
@@ -271,10 +265,19 @@ const color = (d: NodeData) => {
 
     for (const l of linkRenderData) {
       let alpha = 1
+
+      // if we are hovering over a node, we want to highlight the immediate neighbours
+      // with full alpha and the rest with default alpha
       if (hoveredNodeId) {
         alpha = l.active ? 1 : 0.2
       }
-      l.color = l.active ? computedStyleMap["--gray"] : computedStyleMap["--lightgray"]
+
+      // Preserve red for any link touching "Test" content
+      const isTest = isTestLink(l.simulationData)
+      l.color = isTest
+        ? RED
+        : (l.active ? computedStyleMap["--gray"] : computedStyleMap["--lightgray"])
+
       tweenGroup.add(new Tweened<LinkRenderData>(l).to({ alpha }, 200))
     }
 
@@ -299,14 +302,20 @@ const color = (d: NodeData) => {
       if (hoveredNodeId === nodeId) {
         tweenGroup.add(
           new Tweened<Text>(n.label).to(
-            { alpha: 1, scale: { x: activeScale, y: activeScale } },
+            {
+              alpha: 1,
+              scale: { x: activeScale, y: activeScale },
+            },
             100,
           ),
         )
       } else {
         tweenGroup.add(
           new Tweened<Text>(n.label).to(
-            { alpha: n.label.alpha, scale: { x: defaultScale, y: defaultScale } },
+            {
+              alpha: n.label.alpha,
+              scale: { x: defaultScale, y: defaultScale },
+            },
             100,
           ),
         )
@@ -324,12 +333,16 @@ const color = (d: NodeData) => {
 
   function renderNodes() {
     tweens.get("hover")?.stop()
+
     const tweenGroup = new TweenGroup()
     for (const n of nodeRenderData) {
       let alpha = 1
+
+      // if we are hovering over a node, we want to highlight the immediate neighbours
       if (hoveredNodeId !== null && focusOnHover) {
         alpha = n.active ? 1 : 0.2
       }
+
       tweenGroup.add(new Tweened<Graphics>(n.gfx, tweenGroup).to({ alpha }, 200))
     }
 
@@ -384,7 +397,8 @@ const color = (d: NodeData) => {
       anchor: { x: 0.5, y: 1.2 },
       style: {
         fontSize: fontSize * 15,
-        fill: computedStyleMap["--dark"],
+        // Red labels for "Test" nodes, otherwise default
+        fill: isTestNode(n) ? RED : computedStyleMap["--dark"],
         fontFamily: computedStyleMap["--bodyFont"],
       },
       resolution: window.devicePixelRatio * 4,
@@ -392,6 +406,7 @@ const color = (d: NodeData) => {
     label.scale.set(1 / scale)
 
     let oldLabelOpacity = 0
+    const isTagNode = nodeId.startsWith("tags/")
     const gfx = new Graphics({
       interactive: true,
       label: nodeId,
@@ -400,18 +415,26 @@ const color = (d: NodeData) => {
       cursor: "pointer",
     })
       .circle(0, 0, nodeRadius(n))
-      // use our color() function (red for notes, green for tags)
-      .fill({ color: color(n) })
+      // Red fill for "Test" nodes, otherwise original logic
+      .fill({ color: isTagNode ? computedStyleMap["--light"] : color(n) })
       .on("pointerover", (e) => {
         updateHoverInfo(e.target.label)
         oldLabelOpacity = label.alpha
-        if (!dragging) renderPixiFromD3()
+        if (!dragging) {
+          renderPixiFromD3()
+        }
       })
       .on("pointerleave", () => {
         updateHoverInfo(null)
         label.alpha = oldLabelOpacity
-        if (!dragging) renderPixiFromD3()
+        if (!dragging) {
+          renderPixiFromD3()
+        }
       })
+
+    if (isTagNode) {
+      gfx.stroke({ width: 2, color: computedStyleMap["--tertiary"] })
+    }
 
     nodesContainer.addChild(gfx)
     labelsContainer.addChild(label)
@@ -434,8 +457,9 @@ const color = (d: NodeData) => {
 
     const linkRenderDatum: LinkRenderData = {
       simulationData: l,
+      // Make any link touching "Test" nodes red by default
+      color: isTestLink(l) ? RED : computedStyleMap["--lightgray"],
       gfx,
-      color: computedStyleMap["--lightgray"],
       alpha: 1,
       active: false,
     }
@@ -473,6 +497,7 @@ const color = (d: NodeData) => {
           event.subject.fy = null
           dragging = false
 
+          // if the time between mousedown and mouseup is short, we consider it a click
           if (Date.now() - dragStartTime < 500) {
             const node = graphData.nodes.find((n) => n.id === event.subject.id) as NodeData
             const targ = resolveRelative(fullSlug, node.id)
@@ -502,6 +527,7 @@ const color = (d: NodeData) => {
           stage.scale.set(transform.k, transform.k)
           stage.position.set(transform.x, transform.y)
 
+          // zoom adjusts opacity of labels too
           const scale = transform.k * opacityScale
           let scaleOpacity = Math.max((scale - 1) / 3.75, 0)
           const activeNodes = nodeRenderData.filter((n) => n.active).flatMap((n) => n.label)
@@ -572,4 +598,70 @@ document.addEventListener("nav", async (e: CustomEventMap["nav"]) => {
   async function renderLocalGraph() {
     cleanupLocalGraphs()
     const localGraphContainers = document.getElementsByClassName("graph-container")
-    for (const container of
+    for (const container of localGraphContainers) {
+      localGraphCleanups.push(await renderGraph(container as HTMLElement, slug))
+    }
+  }
+
+  await renderLocalGraph()
+  const handleThemeChange = () => {
+    void renderLocalGraph()
+  }
+
+  document.addEventListener("themechange", handleThemeChange)
+  window.addCleanup(() => {
+    document.removeEventListener("themechange", handleThemeChange)
+  })
+
+  const containers = [...document.getElementsByClassName("global-graph-outer")] as HTMLElement[]
+  async function renderGlobalGraph() {
+    const slug = getFullSlug(window)
+    for (const container of containers) {
+      container.classList.add("active")
+      const sidebar = container.closest(".sidebar") as HTMLElement
+      if (sidebar) {
+        sidebar.style.zIndex = "1"
+      }
+
+      const graphContainer = container.querySelector(".global-graph-container") as HTMLElement
+      registerEscapeHandler(container, hideGlobalGraph)
+      if (graphContainer) {
+        globalGraphCleanups.push(await renderGraph(graphContainer, slug))
+      }
+    }
+  }
+
+  function hideGlobalGraph() {
+    cleanupGlobalGraphs()
+    for (const container of containers) {
+      container.classList.remove("active")
+      const sidebar = container.closest(".sidebar") as HTMLElement
+      if (sidebar) {
+        sidebar.style.zIndex = ""
+      }
+    }
+  }
+
+  async function shortcutHandler(e: HTMLElementEventMap["keydown"]) {
+    if (e.key === "g" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault()
+      const anyGlobalGraphOpen = containers.some((container) =>
+        container.classList.contains("active"),
+      )
+      anyGlobalGraphOpen ? hideGlobalGraph() : renderGlobalGraph()
+    }
+  }
+
+  const containerIcons = document.getElementsByClassName("global-graph-icon")
+  Array.from(containerIcons).forEach((icon) => {
+    icon.addEventListener("click", renderGlobalGraph)
+    window.addCleanup(() => icon.removeEventListener("click", renderGlobalGraph))
+  })
+
+  document.addEventListener("keydown", shortcutHandler)
+  window.addCleanup(() => {
+    document.removeEventListener("keydown", shortcutHandler)
+    cleanupLocalGraphs()
+    cleanupGlobalGraphs()
+  })
+})
