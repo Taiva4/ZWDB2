@@ -196,7 +196,7 @@ const folderColorMap: Record<string, string> = {
   "projects": "#4f46e5",  // indigo
   "journal":  "#f59e0b",  // amber
   "research": "#10b981",  // emerald
-  "notes":    "#ef4444",  // red
+  "Test":    "#ef4444",  // red
 }
 
 // Helper: get top-level folder from an id like "projects/foo/bar"
