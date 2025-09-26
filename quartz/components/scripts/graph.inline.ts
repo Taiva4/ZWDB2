@@ -190,11 +190,36 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     {} as Record<(typeof cssVars)[number], string>,
   )
 
+// Map top-level folders (relative to content/) to colors.
+// Add/adjust as you like (hex, rgb(), or CSS variables all work).
 const folderColorMap: Record<string, string> = {
   "projects": "#4f46e5",  // indigo
   "journal":  "#f59e0b",  // amber
   "research": "#10b981",  // emerald
-  "Test":    "#ef4444",  // red
+  "notes":    "#ef4444",  // red
+}
+
+// Helper: get top-level folder from an id like "projects/foo/bar"
+function topFolderFromId(id: string): string {
+  const parts = id.split("/")
+  // ids for tags typically start with "tags/", we leave those to your existing rule
+  return parts.length > 1 ? parts[0] : ""
+}
+
+const color = (d: NodeData) => {
+  const isCurrent = d.id === slug
+  if (isCurrent) {
+    return computedStyleMap["--secondary"]
+  } else if (visited.has(d.id) || d.id.startsWith("tags/")) {
+    return computedStyleMap["--tertiary"]
+  } else {
+    const folder = topFolderFromId(d.id)
+    if (folder && folderColorMap[folder]) {
+      return folderColorMap[folder]
+    }
+    return computedStyleMap["--gray"] // fallback
+  }
+}
 
   function nodeRadius(d: NodeData) {
     const numLinks = graphData.links.filter(
