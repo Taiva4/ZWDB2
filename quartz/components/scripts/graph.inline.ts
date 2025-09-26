@@ -190,14 +190,11 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     {} as Record<(typeof cssVars)[number], string>,
   )
 
-  // 🔴 Notes are red, 🟢 tags are green
-  const color = (d: NodeData) => {
-    if (d.id.startsWith("tags/")) {
-      return "#00ff00" // green
-    } else {
-      return "#ff0000" // red
-    }
-  }
+const folderColorMap: Record<string, string> = {
+  "projects": "#4f46e5",  // indigo
+  "journal":  "#f59e0b",  // amber
+  "research": "#10b981",  // emerald
+  "Test":    "#ef4444",  // red
 
   function nodeRadius(d: NodeData) {
     const numLinks = graphData.links.filter(
