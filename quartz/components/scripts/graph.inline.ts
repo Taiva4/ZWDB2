@@ -126,7 +126,6 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const wl: (SimpleSlug | "__SENTINEL")[] = [slug, "__SENTINEL"]
   if (depth >= 0) {
     while (depth >= 0 && wl.length > 0) {
-      // compute neighbours
       const cur = wl.shift()!
       if (cur === "__SENTINEL") {
         depth--
@@ -191,8 +190,14 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
     {} as Record<(typeof cssVars)[number], string>,
   )
 
-  // 🔴 Every node is red
-  const color = (d: NodeData) => "#ff0000"
+  // 🔴 Notes are red, 🟢 tags are green
+  const color = (d: NodeData) => {
+    if (d.id.startsWith("tags/")) {
+      return "#00ff00" // green
+    } else {
+      return "#ff0000" // red
+    }
+  }
 
   function nodeRadius(d: NodeData) {
     const numLinks = graphData.links.filter(
@@ -373,8 +378,8 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
       cursor: "pointer",
     })
       .circle(0, 0, nodeRadius(n))
-      // 🔴 force every node to be red
-      .fill({ color: "#ff0000" })
+      // use our color() function (red for notes, green for tags)
+      .fill({ color: color(n) })
       .on("pointerover", (e) => {
         updateHoverInfo(e.target.label)
         oldLabelOpacity = label.alpha
@@ -393,7 +398,7 @@ async function renderGraph(graph: HTMLElement, fullSlug: FullSlug) {
       simulationData: n,
       gfx,
       label,
-      color: "#ff0000", // keep internal state red
+      color: color(n),
       alpha: 1,
       active: false,
     }
@@ -545,10 +550,4 @@ document.addEventListener("nav", async (e: CustomEventMap["nav"]) => {
   async function renderLocalGraph() {
     cleanupLocalGraphs()
     const localGraphContainers = document.getElementsByClassName("graph-container")
-    for (const container of localGraphContainers) {
-      localGraphCleanups.push(await renderGraph(container as HTMLElement, slug))
-    }
-  }
-
-  await renderLocalGraph()
- 
+    for (const container of
